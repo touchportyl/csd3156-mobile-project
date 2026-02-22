@@ -1,5 +1,7 @@
 package com.example.tiltmaster.ui
 
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.layout.onSizeChanged
 import android.content.Context
 import android.hardware.Sensor
 import android.hardware.SensorEvent
@@ -54,53 +56,59 @@ private fun circleIntersectsRect(center: Offset, radius: Float, r: Rect): Boolea
     return dx * dx + dy * dy <= radius * radius
 }
 
-private fun updatePhysics(state: GameState, dt: Float) {
+private fun updatePhysics(
+    state: GameState,
+    dt: Float,
+    boundsWidth: Float,
+    boundsHeight: Float
+) {
     if (state.finished || state.failed) return
 
     state.elapsedSec += dt
 
-    // “Tilt” acceleration -> velocity
     val accel = state.tiltAccel
     val damping = 0.98f
     val maxSpeed = 1200f
 
     state.ball.vel = Offset(
-        (state.ball.vel.x + accel.x * dt),
-        (state.ball.vel.y + accel.y * dt)
+        state.ball.vel.x + accel.x * dt,
+        state.ball.vel.y + accel.y * dt
     )
 
-    // clamp speed
     val vx = clamp(state.ball.vel.x, -maxSpeed, maxSpeed)
     val vy = clamp(state.ball.vel.y, -maxSpeed, maxSpeed)
     state.ball.vel = Offset(vx, vy)
 
-    // integrate position
     var nextPos = state.ball.pos + state.ball.vel * dt
 
-    // collide with walls: very simple response (push out + reflect axis)
+    val radius = state.ball.radius
+
+    // ----------------------------
+    // WALL COLLISION (unchanged)
+    // ----------------------------
     for (w in state.walls) {
+
         val closestX = clamp(nextPos.x, w.rect.left, w.rect.right)
         val closestY = clamp(nextPos.y, w.rect.top, w.rect.bottom)
 
         val dx = nextPos.x - closestX
         val dy = nextPos.y - closestY
 
-        val dist = kotlin.math.sqrt(dx*dx + dy*dy)
+        val distSq = dx * dx + dy * dy
 
-        if (dist < state.ball.radius) {
-            val nx = dx / dist
-            val ny = dy / dist
+        if (distSq < radius * radius) {
 
-            val penetration = state.ball.radius - dist
+            val dist = kotlin.math.sqrt(distSq)
+            val nx = if (dist != 0f) dx / dist else 0f
+            val ny = if (dist != 0f) dy / dist else 0f
 
-            // push ball out of wall
+            val penetration = radius - dist
+
             nextPos += Offset(nx * penetration, ny * penetration)
 
-            // remove velocity component into wall
             val dot = state.ball.vel.x * nx + state.ball.vel.y * ny
             if (dot < 0f) {
-                val restitution = 0.6f   // 0 = no bounce, 1 = perfect bounce
-
+                val restitution = 0.6f
                 state.ball.vel = Offset(
                     state.ball.vel.x - (1f + restitution) * dot * nx,
                     state.ball.vel.y - (1f + restitution) * dot * ny
@@ -109,19 +117,76 @@ private fun updatePhysics(state: GameState, dt: Float) {
         }
     }
 
+    // ----------------------------
+    // ROUNDED SCREEN BOUNDARIES
+    // ----------------------------
+
+    val cornerRadius = 60f   // how rounded the screen corners feel
+    val restitution = 0.6f
+
+    fun resolveCollision(nx: Float, ny: Float, penetration: Float) {
+        nextPos += Offset(nx * penetration, ny * penetration)
+
+        val dot = state.ball.vel.x * nx + state.ball.vel.y * ny
+        if (dot < 0f) {
+            state.ball.vel = Offset(
+                state.ball.vel.x - (1f + restitution) * dot * nx,
+                state.ball.vel.y - (1f + restitution) * dot * ny
+            )
+        }
+    }
+
+    // Flat edges
+    if (nextPos.x - radius < 0f)
+        resolveCollision(1f, 0f, radius - nextPos.x)
+
+    if (nextPos.x + radius > boundsWidth)
+        resolveCollision(-1f, 0f, nextPos.x + radius - boundsWidth)
+
+    if (nextPos.y - radius < 0f)
+        resolveCollision(0f, 1f, radius - nextPos.y)
+
+    if (nextPos.y + radius > boundsHeight)
+        resolveCollision(0f, -1f, nextPos.y + radius - boundsHeight)
+
+    // Rounded corners
+    val corners = listOf(
+        Offset(cornerRadius, cornerRadius),
+        Offset(boundsWidth - cornerRadius, cornerRadius),
+        Offset(cornerRadius, boundsHeight - cornerRadius),
+        Offset(boundsWidth - cornerRadius, boundsHeight - cornerRadius)
+    )
+
+    for (corner in corners) {
+        val dx = nextPos.x - corner.x
+        val dy = nextPos.y - corner.y
+        val distSq = dx * dx + dy * dy
+        val maxDist = cornerRadius - radius
+
+        if (distSq < maxDist * maxDist) {
+            val dist = kotlin.math.sqrt(distSq)
+            if (dist != 0f) {
+                val nx = dx / dist
+                val ny = dy / dist
+                val penetration = maxDist - dist
+                resolveCollision(nx, ny, penetration)
+            }
+        }
+    }
+
     state.ball.pos = nextPos
-    state.ball.vel = state.ball.vel * damping
+    state.ball.vel *= damping
 
     // traps
     for (t in state.traps) {
-        if (circleIntersectsRect(state.ball.pos, state.ball.radius, t.rect)) {
+        if (circleIntersectsRect(state.ball.pos, radius, t.rect)) {
             state.failed = true
             return
         }
     }
 
     // goal
-    if (circleIntersectsRect(state.ball.pos, state.ball.radius, state.goal.rect)) {
+    if (circleIntersectsRect(state.ball.pos, radius, state.goal.rect)) {
         state.finished = true
     }
 }
@@ -134,6 +199,8 @@ fun GameScreen(
     val density = LocalDensity.current
 
     val context = LocalContext.current
+
+    var screenSize by remember { mutableStateOf(Size.Zero) }
 
     // filtered tilt from accelerometer, in -1..1 range
     var tiltX by remember { mutableStateOf(0f) }
@@ -234,7 +301,12 @@ fun GameScreen(
                 y = tiltY * accelFactor    // tilt forward → ball moves down
             )
 
-            updatePhysics(newState, dt.coerceIn(0f, 0.033f))
+            updatePhysics(
+                newState,
+                dt.coerceIn(0f, 0.033f),
+                screenSize.width,
+                screenSize.height
+            )
 
             state = newState
 
@@ -245,7 +317,11 @@ fun GameScreen(
 
     // UI overlay + canvas
     Box(Modifier.fillMaxSize()) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
+        Canvas(modifier = Modifier.fillMaxSize()
+                                  .onSizeChanged {
+                                      screenSize = Size(it.width.toFloat(), it.height.toFloat())
+                                  }
+        ) {
             // Draw walls
             for (w in state.walls) drawRect(color = androidx.compose.ui.graphics.Color.DarkGray, topLeft = w.rect.topLeft, size = w.rect.size)
 
