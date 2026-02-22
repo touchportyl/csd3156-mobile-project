@@ -7,13 +7,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
-    var sensitivity by remember { mutableFloatStateOf(1.0f) }
-    var vibration by remember { mutableStateOf(true) }
-    var sound by remember { mutableStateOf(true) }
+fun SettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = viewModel()) {
+    val s = vm.settings.collectAsState().value
+
+    var sensitivity by remember(s.sensitivity) { mutableFloatStateOf(s.sensitivity) }
 
     Scaffold(
         topBar = {
@@ -27,19 +28,21 @@ fun SettingsScreen(onBack: () -> Unit) {
     ) { padding ->
         Column(Modifier.padding(padding).padding(16.dp)) {
             Text("Tilt sensitivity: ${"%.2f".format(sensitivity)}")
-            Slider(value = sensitivity, onValueChange = { sensitivity = it }, valueRange = 0.4f..2.5f)
+            Slider(
+                value = s.sensitivity,
+                onValueChange = { vm.updateSensitivity(it) },
+                valueRange = 0.4f..2.5f
+            )
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Vibration")
-                Switch(checked = vibration, onCheckedChange = { vibration = it })
+                Switch(checked = s.vibrationEnabled, onCheckedChange = { vm.setVibration(it) })
             }
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Sound")
-                Switch(checked = sound, onCheckedChange = { sound = it })
+                Switch(checked = s.soundEnabled, onCheckedChange = { vm.setSound(it) })
             }
-
-            // later: save to Room
         }
     }
 }
