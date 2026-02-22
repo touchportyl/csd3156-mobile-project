@@ -79,19 +79,33 @@ private fun updatePhysics(state: GameState, dt: Float) {
 
     // collide with walls: very simple response (push out + reflect axis)
     for (w in state.walls) {
-        if (circleIntersectsRect(nextPos, state.ball.radius, w.rect)) {
-            // crude separation: try resolve X then Y
-            val tryX = Offset(state.ball.pos.x, nextPos.y)
-            val tryY = Offset(nextPos.x, state.ball.pos.y)
+        val closestX = clamp(nextPos.x, w.rect.left, w.rect.right)
+        val closestY = clamp(nextPos.y, w.rect.top, w.rect.bottom)
 
-            val hitX = circleIntersectsRect(tryY, state.ball.radius, w.rect) // moving X
-            val hitY = circleIntersectsRect(tryX, state.ball.radius, w.rect) // moving Y
+        val dx = nextPos.x - closestX
+        val dy = nextPos.y - closestY
 
-            if (hitX) state.ball.vel = Offset(-state.ball.vel.x * 0.6f, state.ball.vel.y)
-            if (hitY) state.ball.vel = Offset(state.ball.vel.x, -state.ball.vel.y * 0.6f)
+        val dist = kotlin.math.sqrt(dx*dx + dy*dy)
 
-            nextPos = state.ball.pos // stop this frame
-            break
+        if (dist < state.ball.radius) {
+            val nx = dx / dist
+            val ny = dy / dist
+
+            val penetration = state.ball.radius - dist
+
+            // push ball out of wall
+            nextPos += Offset(nx * penetration, ny * penetration)
+
+            // remove velocity component into wall
+            val dot = state.ball.vel.x * nx + state.ball.vel.y * ny
+            if (dot < 0f) {
+                val restitution = 0.6f   // 0 = no bounce, 1 = perfect bounce
+
+                state.ball.vel = Offset(
+                    state.ball.vel.x - (1f + restitution) * dot * nx,
+                    state.ball.vel.y - (1f + restitution) * dot * ny
+                )
+            }
         }
     }
 
