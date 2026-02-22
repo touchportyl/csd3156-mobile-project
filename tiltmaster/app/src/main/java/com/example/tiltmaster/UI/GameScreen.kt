@@ -1,13 +1,12 @@
+
+
 package com.example.tiltmaster.ui
 
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.layout.onSizeChanged
 import android.content.Context
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -17,9 +16,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.max
 import kotlin.math.min
@@ -69,8 +73,11 @@ private fun updatePhysics(
     state.elapsedSec += dt
 
     val accel = state.tiltAccel
-    val damping = 0.98f
-    val maxSpeed = 1200f
+
+    // Harder levels: more accel, less damping, higher max speed
+    val levelFactor = (state.levelId - 1).coerceIn(0, 4) // 0..4
+    val damping = (0.985f - levelFactor * 0.002f).coerceIn(0.972f, 0.985f)
+    val maxSpeed = (1100f + levelFactor * 120f)
 
     state.ball.vel = Offset(
         state.ball.vel.x + accel.x * dt,
@@ -82,30 +89,25 @@ private fun updatePhysics(
     state.ball.vel = Offset(vx, vy)
 
     var nextPos = state.ball.pos + state.ball.vel * dt
-
     val radius = state.ball.radius
 
     // ----------------------------
     // WALL COLLISION (unchanged)
     // ----------------------------
     for (w in state.walls) {
-
         val closestX = clamp(nextPos.x, w.rect.left, w.rect.right)
         val closestY = clamp(nextPos.y, w.rect.top, w.rect.bottom)
 
         val dx = nextPos.x - closestX
         val dy = nextPos.y - closestY
-
         val distSq = dx * dx + dy * dy
 
         if (distSq < radius * radius) {
-
             val dist = kotlin.math.sqrt(distSq)
             val nx = if (dist != 0f) dx / dist else 0f
             val ny = if (dist != 0f) dy / dist else 0f
 
             val penetration = radius - dist
-
             nextPos += Offset(nx * penetration, ny * penetration)
 
             val dot = state.ball.vel.x * nx + state.ball.vel.y * ny
@@ -121,9 +123,9 @@ private fun updatePhysics(
 
     // ----------------------------
     // ROUNDED SCREEN BOUNDARIES
+    // (these are in "boundsWidth/Height" coords)
     // ----------------------------
-
-    val cornerRadius = 60f   // how rounded the screen corners feel
+    val cornerRadius = 60f
     val restitution = 0.6f
 
     fun resolveCollision(nx: Float, ny: Float, penetration: Float) {
@@ -139,17 +141,10 @@ private fun updatePhysics(
     }
 
     // Flat edges
-    if (nextPos.x - radius < 0f)
-        resolveCollision(1f, 0f, radius - nextPos.x)
-
-    if (nextPos.x + radius > boundsWidth)
-        resolveCollision(-1f, 0f, nextPos.x + radius - boundsWidth)
-
-    if (nextPos.y - radius < 0f)
-        resolveCollision(0f, 1f, radius - nextPos.y)
-
-    if (nextPos.y + radius > boundsHeight)
-        resolveCollision(0f, -1f, nextPos.y + radius - boundsHeight)
+    if (nextPos.x - radius < 0f) resolveCollision(1f, 0f, radius - nextPos.x)
+    if (nextPos.x + radius > boundsWidth) resolveCollision(-1f, 0f, nextPos.x + radius - boundsWidth)
+    if (nextPos.y - radius < 0f) resolveCollision(0f, 1f, radius - nextPos.y)
+    if (nextPos.y + radius > boundsHeight) resolveCollision(0f, -1f, nextPos.y + radius - boundsHeight)
 
     // Rounded corners
     val corners = listOf(
@@ -192,6 +187,231 @@ private fun updatePhysics(
         state.finished = true
     }
 }
+/**
+ * 5 levels (harder = more obstacles + tighter paths).
+ * Design space: ~0..1000.
+ *
+ * Convention used here:
+ * - Outer border is always a closed box (thick walls).
+ * - Interior walls are arranged so there is always at least ONE valid path
+ *   from start (ball spawn near top-left) to goal (near bottom-right).
+ */
+/**
+ * 5 vertical levels (harder = narrower paths + more traps).
+ * Design space: W=1000, H=1400.
+ *
+ * Border thickness ~40.
+ * Doorways/gaps are kept >= ~140px so the ball can pass reliably.
+ */
+private fun buildLevel(levelId: Int): Triple<List<Wall>, List<Trap>, Goal> {
+
+    // Tall border: x 100..900, y 100..1300 (thickness 40)
+    val border = listOf(
+        Wall(Rect(100f, 100f, 900f, 140f)),    // top
+        Wall(Rect(100f, 100f, 140f, 1300f)),   // left
+        Wall(Rect(100f, 1260f, 900f, 1300f)),  // bottom
+        Wall(Rect(860f, 100f, 900f, 1300f)),   // right
+    )
+
+    return when (levelId.coerceIn(1, 5)) {
+
+        // ===============================================================
+        // LEVEL 1 — "Warm Up" (very easy)
+        // One big divider. You just go down then right.
+        // ===============================================================
+        1 -> {
+            val walls = border + listOf(
+                // A horizontal divider with a wide gap on the right
+                Wall(Rect(140f, 420f, 700f, 460f)),
+                // A small pillar to teach control (not blocking)
+                Wall(Rect(420f, 720f, 470f, 860f)),
+            )
+
+            val traps = listOf(
+                Trap(Rect(620f, 560f, 680f, 620f)) // avoidable
+            )
+
+            val goal = Goal(Rect(760f, 1160f, 840f, 1240f))
+            Triple(walls, traps, goal)
+        }
+
+        // ===============================================================
+        // LEVEL 2 — "Three Gates" (easy-medium)
+        // Vertical progress: pass 3 gate lines with alternating openings.
+        // ===============================================================
+        2 -> {
+            val walls = border + listOf(
+                // Gate 1 (opening on RIGHT)
+                Wall(Rect(140f, 320f, 700f, 360f)),
+
+                // Gate 2 (opening on LEFT)
+                Wall(Rect(300f, 520f, 860f, 560f)),
+
+                // Gate 3 (opening on RIGHT)
+                Wall(Rect(140f, 760f, 700f, 800f)),
+
+                // Gate 4 (opening on LEFT) near bottom
+                Wall(Rect(300f, 980f, 860f, 1020f)),
+            )
+
+            val traps = listOf(
+                // Near openings but not inside
+                Trap(Rect(740f, 380f, 800f, 440f)),
+                Trap(Rect(200f, 600f, 260f, 660f)),
+                Trap(Rect(740f, 820f, 800f, 880f)),
+            )
+
+            val goal = Goal(Rect(760f, 1160f, 840f, 1240f))
+            Triple(walls, traps, goal)
+        }
+
+        // ===============================================================
+        // LEVEL 3 — "Switchbacks" (medium)
+        // Proper vertical snake corridor (alternating left/right).
+        // ===============================================================
+        3 -> {
+            val walls = border + listOf(
+                // Long bars creating switchbacks (wide gaps)
+                Wall(Rect(140f, 260f, 760f, 300f)),  // gap right (760..860)
+                Wall(Rect(240f, 420f, 860f, 460f)),  // gap left (140..240)
+                Wall(Rect(140f, 580f, 760f, 620f)),  // gap right
+                Wall(Rect(240f, 740f, 860f, 780f)),  // gap left
+                Wall(Rect(140f, 900f, 760f, 940f)),  // gap right
+                Wall(Rect(240f, 1060f, 860f, 1100f)),// gap left
+
+                // A couple of “posts” to make turns harder but passable
+                Wall(Rect(740f, 300f, 780f, 380f)),
+                Wall(Rect(220f, 460f, 260f, 540f)),
+                Wall(Rect(740f, 620f, 780f, 700f)),
+            )
+
+            val traps = listOf(
+                Trap(Rect(780f, 340f, 840f, 400f)),
+                Trap(Rect(160f, 500f, 220f, 560f)),
+                Trap(Rect(780f, 820f, 840f, 880f)),
+                Trap(Rect(160f, 980f, 220f, 1040f)),
+            )
+
+            val goal = Goal(Rect(760f, 1160f, 840f, 1240f))
+            Triple(walls, traps, goal)
+        }
+
+        // ===============================================================
+        // LEVEL 4 — "Rooms + Doors" (hard)
+        // 4 stacked rooms; each separator has one big doorway.
+        // ===============================================================
+        4 -> {
+            val walls = border + listOf(
+                // Separator 1 (doorway on RIGHT)
+                Wall(Rect(140f, 360f, 680f, 400f)),
+
+                // Separator 2 (doorway on LEFT)
+                Wall(Rect(320f, 620f, 860f, 660f)),
+
+                // Separator 3 (doorway on RIGHT)
+                Wall(Rect(140f, 880f, 680f, 920f)),
+
+                // Add a vertical wall in the middle with TWO doorways (forces S-turn)
+                Wall(Rect(500f, 140f, 540f, 280f)),
+                Wall(Rect(500f, 440f, 540f, 560f)),
+                Wall(Rect(500f, 720f, 540f, 840f)),
+                Wall(Rect(500f, 1000f, 540f, 1260f)),
+                // doorways at y=280..440, 560..720, 840..1000
+            )
+
+            val traps = listOf(
+                Trap(Rect(720f, 260f, 780f, 320f)), // near doorway 1
+                Trap(Rect(200f, 520f, 260f, 580f)), // near doorway 2
+                Trap(Rect(720f, 780f, 780f, 840f)), // near doorway 3
+                Trap(Rect(620f, 1100f, 680f, 1160f)),// near bottom
+            )
+
+            val goal = Goal(Rect(760f, 1160f, 840f, 1240f))
+            Triple(walls, traps, goal)
+        }
+
+        // ===============================================================
+        // LEVEL 5 — "Vertical Gauntlet" (hardest but fair)
+        // Narrower route, multiple turns, no sealed goal pocket.
+        // ===============================================================
+        else -> {
+            val walls = border + listOf(
+                // Build a corridor using “blocking slabs”.
+                // Intended route is a long vertical run with alternating side shifts.
+
+                // Blocker A: forces you to go RIGHT early
+                Wall(Rect(140f, 260f, 620f, 300f)),
+
+                // Blocker B: forces you to go LEFT
+                Wall(Rect(380f, 420f, 860f, 460f)),
+
+                // Blocker C: forces you to go RIGHT
+                Wall(Rect(140f, 580f, 620f, 620f)),
+
+                // Blocker D: forces you to go LEFT
+                Wall(Rect(380f, 740f, 860f, 780f)),
+
+                // Blocker E: forces you to go RIGHT near end
+                Wall(Rect(140f, 900f, 620f, 940f)),
+
+                // Blocker F: forces you to go LEFT one last time
+                Wall(Rect(380f, 1060f, 860f, 1100f)),
+
+                // Tightening pillars (still passable)
+                Wall(Rect(620f, 300f, 660f, 380f)),
+                Wall(Rect(340f, 460f, 380f, 540f)),
+                Wall(Rect(620f, 620f, 660f, 700f)),
+                Wall(Rect(340f, 780f, 380f, 860f)),
+            )
+
+            val traps = listOf(
+                // Traps punish overshooting turns, not blocking door gaps
+                Trap(Rect(720f, 320f, 780f, 380f)),
+                Trap(Rect(200f, 500f, 260f, 560f)),
+                Trap(Rect(720f, 680f, 780f, 740f)),
+                Trap(Rect(200f, 860f, 260f, 920f)),
+                Trap(Rect(720f, 1120f, 780f, 1180f)),
+            )
+
+            // Goal near bottom-right, reachable from the last right shift
+            val goal = Goal(Rect(760f, 1160f, 840f, 1240f))
+            Triple(walls, traps, goal)
+        }
+    }
+}
+
+// --- NEW: bounds-based centering (centers the actual maze, not the 0..1000 board) ---
+private fun levelBounds(walls: List<Wall>, traps: List<Trap>, goal: Goal, ball: Ball): Rect {
+    var left = Float.POSITIVE_INFINITY
+    var top = Float.POSITIVE_INFINITY
+    var right = Float.NEGATIVE_INFINITY
+    var bottom = Float.NEGATIVE_INFINITY
+
+    fun include(r: Rect) {
+        left = min(left, r.left)
+        top = min(top, r.top)
+        right = max(right, r.right)
+        bottom = max(bottom, r.bottom)
+    }
+
+    for (w in walls) include(w.rect)
+    for (t in traps) include(t.rect)
+    include(goal.rect)
+
+    // include ball spawn so it doesn't get clipped
+    include(
+        Rect(
+            ball.pos.x - ball.radius,
+            ball.pos.y - ball.radius,
+            ball.pos.x + ball.radius,
+            ball.pos.y + ball.radius
+        )
+    )
+
+    // padding around the maze content
+    val pad = 40f
+    return Rect(left - pad, top - pad, right + pad, bottom + pad)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -199,36 +419,34 @@ fun GameScreen(
     levelId: Int,
     onExit: () -> Unit
 ) {
+    val context = LocalContext.current
     val density = LocalDensity.current
 
-    val context = LocalContext.current
+    // Physics still uses this as your "world bounds"
+    val DESIGN_W = 1000f
+    val DESIGN_H = 1000f
 
     var screenSize by remember { mutableStateOf(Size.Zero) }
 
-    // filtered tilt from accelerometer, in -1..1 range
     var tiltX by remember { mutableStateOf(0f) }
     var tiltY by remember { mutableStateOf(0f) }
     var sensorAvailable by remember { mutableStateOf(true) }
 
-    // You’ll eventually load these from a Level loader
+    val (lvlWalls, lvlTraps, lvlGoal) = remember(levelId) { buildLevel(levelId) }
+
     var state by remember(levelId) {
         mutableStateOf(
-        //val ball = Ball(pos = Offset(200f, 200f), vel = Offset.Zero, radius = 22f)
-        GameState(
-            levelId = levelId,
-            ball = Ball(pos = Offset(200f, 200f), vel = Offset.Zero, radius = 22f),
-            walls = listOf(
-                Wall(Rect(100f, 100f, 700f, 130f)),
-                Wall(Rect(100f, 100f, 130f, 900f)),
-                Wall(Rect(100f, 900f, 900f, 930f)),
-                Wall(Rect(900f, 200f, 930f, 930f)),
-                Wall(Rect(250f, 250f, 800f, 280f)),
-            ),
-            traps = listOf(
-                Trap(Rect(450f, 500f, 520f, 570f))
-            ),
-            goal = Goal(Rect(820f, 820f, 900f, 900f))
-        )
+            GameState(
+                levelId = levelId,
+                ball = Ball(
+                    pos = Offset(200f, 200f),
+                    vel = Offset.Zero,
+                    radius = (22f - (levelId - 1).coerceIn(0, 4) * 1.5f)
+                ),
+                walls = lvlWalls,
+                traps = lvlTraps,
+                goal = lvlGoal
+            )
         )
     }
 
@@ -243,11 +461,10 @@ fun GameScreen(
 
         sensorAvailable = true
 
-        // Low-pass filter variables
         var filteredX = 0f
         var filteredY = 0f
-        val alpha = 0.1f           // 0..1, lower = more smoothing
-        val maxTilt = 10f          // same as TiltTestScreen
+        val alpha = 0.1f
+        val maxTilt = 10f
 
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent?) {
@@ -255,31 +472,20 @@ fun GameScreen(
                     val rawX = it.values[0]
                     val rawY = it.values[1]
 
-                    // Low-pass filter
                     filteredX = alpha * rawX + (1f - alpha) * filteredX
                     filteredY = alpha * rawY + (1f - alpha) * filteredY
 
-                    // Normalize to -1..1
                     tiltX = (filteredX / maxTilt).coerceIn(-1f, 1f)
                     tiltY = (filteredY / maxTilt).coerceIn(-1f, 1f)
                 }
             }
-
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
         }
 
-        sensorManager.registerListener(
-            listener,
-            accelerometer,
-            SensorManager.SENSOR_DELAY_GAME
-        )
-
-        onDispose {
-            sensorManager.unregisterListener(listener)
-        }
+        sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_GAME)
+        onDispose { sensorManager.unregisterListener(listener) }
     }
 
-    // Continuous game loop (ticks state, triggers redraw via state mutation)
     LaunchedEffect(levelId) {
         var last = System.nanoTime()
         while (isActive) {
@@ -287,79 +493,127 @@ fun GameScreen(
             val dt = (now - last) / 1_000_000_000f
             last = now
 
-            // TODO: replace with real tilt sensor input
-            // For now: no accel -> ball stops unless you add input
-            //state.tiltAccel = Offset(0f, 0f)
-
-            // Map tilt (-1..1) to game acceleration; tweak factor to taste
-            val accelFactor = 900f   // pixels per second^2 per 1.0 tilt
+            val levelFactor = (levelId - 1).coerceIn(0, 4)
+            val accelFactor = 900f + levelFactor * 140f
 
             val newState = state.copy(
-                tiltAccel = Offset(-tiltX * accelFactor, tiltY * accelFactor)
-            )
-
-            // Note: you can flip signs depending on feel
-            state.tiltAccel = Offset(
-                x = -tiltX * accelFactor,  // tilt right → ball moves right (adjust if opposite)
-                y = tiltY * accelFactor    // tilt forward → ball moves down
+                tiltAccel = Offset(
+                    x = -tiltX * accelFactor,
+                    y = tiltY * accelFactor
+                )
             )
 
             updatePhysics(
                 newState,
                 dt.coerceIn(0f, 0.033f),
-                screenSize.width,
-                screenSize.height
+                DESIGN_W,
+                DESIGN_H
             )
 
             state = newState
-
-            // small delay to avoid maxing CPU; you can tune
-            kotlinx.coroutines.delay(16)
+            delay(16)
         }
     }
 
-    // UI overlay + canvas
-    Box(Modifier.fillMaxSize()) {
-        Canvas(modifier = Modifier.fillMaxSize()
-                                  .onSizeChanged {
-                                      screenSize = Size(it.width.toFloat(), it.height.toFloat())
-                                  }
-        ) {
-            // Draw walls
-            for (w in state.walls) drawRect(color = androidx.compose.ui.graphics.Color.DarkGray, topLeft = w.rect.topLeft, size = w.rect.size)
+    // --- Top UI height in PX (to avoid drawing under the app bar/status bar) ---
+    val appBarHeightDp = 56.dp
+    val statusBarTopDp = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    val topUiDp = statusBarTopDp + appBarHeightDp
+    val topUiPx = with(density) { topUiDp.toPx() }
 
-            // Draw traps
-            for (t in state.traps) drawRect(color = androidx.compose.ui.graphics.Color.Red, topLeft = t.rect.topLeft, size = t.rect.size)
+    // --- NEW: center based on actual content bounds (maze may start at x=100, etc.) ---
+    val contentRect = remember(levelId) {
+        levelBounds(lvlWalls, lvlTraps, lvlGoal, state.ball)
+    }
 
-            // Draw goal
-            drawRect(color = androidx.compose.ui.graphics.Color.Green, topLeft = state.goal.rect.topLeft, size = state.goal.rect.size)
+    val scale = remember(screenSize, topUiPx, contentRect) {
+        if (screenSize.width <= 0f || screenSize.height <= 0f) 1f else {
+            val availH = (screenSize.height - topUiPx).coerceAtLeast(1f)
+            min(screenSize.width / contentRect.width, availH / contentRect.height)
+        }
+    }
 
-            // Draw ball
-            drawCircle(
-                color = androidx.compose.ui.graphics.Color.Cyan,
-                radius = state.ball.radius,
-                center = state.ball.pos,
-                style = Fill
+    val offset = remember(screenSize, topUiPx, contentRect, scale) {
+        if (screenSize.width <= 0f || screenSize.height <= 0f) Offset.Zero else {
+            val availH = (screenSize.height - topUiPx).coerceAtLeast(1f)
+            val drawW = contentRect.width * scale
+            val drawH = contentRect.height * scale
+
+            val ox = (screenSize.width - drawW) / 2f
+            val oy = topUiPx + (availH - drawH) / 2f
+
+            // shift by contentRect.left/top so maze is truly centered
+            Offset(
+                x = ox - contentRect.left * scale,
+                y = oy - contentRect.top * scale
             )
         }
+    }
 
-        // Overlay UI
+    Box(Modifier.fillMaxSize()) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .onSizeChanged {
+                    screenSize = Size(it.width.toFloat(), it.height.toFloat())
+                }
+        ) {
+            withTransform({
+                translate(left = offset.x, top = offset.y)
+                scale(scaleX = scale, scaleY = scale, pivot = Offset.Zero)
+            }) {
+                for (w in state.walls) {
+                    drawRect(
+                        color = androidx.compose.ui.graphics.Color.DarkGray,
+                        topLeft = w.rect.topLeft,
+                        size = w.rect.size
+                    )
+                }
+
+                for (t in state.traps) {
+                    drawRect(
+                        color = androidx.compose.ui.graphics.Color.Red,
+                        topLeft = t.rect.topLeft,
+                        size = t.rect.size
+                    )
+                }
+
+                drawRect(
+                    color = androidx.compose.ui.graphics.Color.Green,
+                    topLeft = state.goal.rect.topLeft,
+                    size = state.goal.rect.size
+                )
+
+                drawCircle(
+                    color = androidx.compose.ui.graphics.Color.Cyan,
+                    radius = state.ball.radius,
+                    center = state.ball.pos,
+                    style = Fill
+                )
+            }
+        }
+
         TopAppBar(
             title = { Text("Level ${state.levelId}") },
-            navigationIcon = { IconButton(onClick = onExit) {
-                Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-            } },
+            navigationIcon = {
+                IconButton(onClick = onExit) {
+                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                }
+            },
             modifier = Modifier.fillMaxWidth()
         )
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 84.dp) // pushes below TopAppBar
+                .padding(top = 84.dp)
                 .padding(12.dp)
         ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Time: ${"%.2f".format(state.elapsedSec)}s", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Time: ${"%.2f".format(state.elapsedSec)}s",
+                    style = MaterialTheme.typography.titleMedium
+                )
                 if (state.finished) Text("Finished!", style = MaterialTheme.typography.titleMedium)
                 else if (state.failed) Text("Hit trap!", style = MaterialTheme.typography.titleMedium)
             }

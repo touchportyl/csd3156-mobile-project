@@ -1,3 +1,4 @@
+
 package com.example.tiltmaster.ui
 
 import androidx.compose.foundation.clickable
@@ -17,15 +18,17 @@ fun LevelSelectScreen(
     onBack: () -> Unit,
     onSelectLevel: (Int) -> Unit
 ) {
-    val levels = (1..20).toList() // later: load unlocked from Room
+    val levels = (1..5).toList() // only 5 levels
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Select Level") },
-                navigationIcon = { IconButton(onClick = onBack) {
-                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
-                } }
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
             )
         }
     ) { padding ->
@@ -42,7 +45,10 @@ fun LevelSelectScreen(
                         .fillMaxWidth()
                         .clickable { onSelectLevel(lvl) }
                 ) {
-                    Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Row(
+                        Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
                         Text("Level $lvl")
                         Text("Best: --.--") // later: from Room
                     }
