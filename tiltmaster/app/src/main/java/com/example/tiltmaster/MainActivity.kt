@@ -27,7 +27,7 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 Surface {
                     AppNav()
-                    AppNavigation()
+                    //AppNavigation()
                 }
             }
         }

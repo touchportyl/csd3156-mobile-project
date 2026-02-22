@@ -1,5 +1,11 @@
 package com.example.tiltmaster.ui
 
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -113,12 +119,20 @@ fun GameScreen(
 ) {
     val density = LocalDensity.current
 
+    val context = LocalContext.current
+
+    // filtered tilt from accelerometer, in -1..1 range
+    var tiltX by remember { mutableStateOf(0f) }
+    var tiltY by remember { mutableStateOf(0f) }
+    var sensorAvailable by remember { mutableStateOf(true) }
+
     // You’ll eventually load these from a Level loader
-    val state = remember(levelId) {
-        val ball = Ball(pos = Offset(200f, 200f), vel = Offset.Zero, radius = 22f)
+    var state by remember(levelId) {
+        mutableStateOf(
+        //val ball = Ball(pos = Offset(200f, 200f), vel = Offset.Zero, radius = 22f)
         GameState(
             levelId = levelId,
-            ball = ball,
+            ball = Ball(pos = Offset(200f, 200f), vel = Offset.Zero, radius = 22f),
             walls = listOf(
                 Wall(Rect(100f, 100f, 700f, 130f)),
                 Wall(Rect(100f, 100f, 130f, 900f)),
@@ -131,6 +145,54 @@ fun GameScreen(
             ),
             goal = Goal(Rect(820f, 820f, 900f, 900f))
         )
+        )
+    }
+
+    DisposableEffect(Unit) {
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+
+        if (accelerometer == null) {
+            sensorAvailable = false
+            return@DisposableEffect onDispose { }
+        }
+
+        sensorAvailable = true
+
+        // Low-pass filter variables
+        var filteredX = 0f
+        var filteredY = 0f
+        val alpha = 0.1f           // 0..1, lower = more smoothing
+        val maxTilt = 10f          // same as TiltTestScreen
+
+        val listener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent?) {
+                event?.let {
+                    val rawX = it.values[0]
+                    val rawY = it.values[1]
+
+                    // Low-pass filter
+                    filteredX = alpha * rawX + (1f - alpha) * filteredX
+                    filteredY = alpha * rawY + (1f - alpha) * filteredY
+
+                    // Normalize to -1..1
+                    tiltX = (filteredX / maxTilt).coerceIn(-1f, 1f)
+                    tiltY = (filteredY / maxTilt).coerceIn(-1f, 1f)
+                }
+            }
+
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+        }
+
+        sensorManager.registerListener(
+            listener,
+            accelerometer,
+            SensorManager.SENSOR_DELAY_GAME
+        )
+
+        onDispose {
+            sensorManager.unregisterListener(listener)
+        }
     }
 
     // Continuous game loop (ticks state, triggers redraw via state mutation)
@@ -143,9 +205,25 @@ fun GameScreen(
 
             // TODO: replace with real tilt sensor input
             // For now: no accel -> ball stops unless you add input
-            state.tiltAccel = Offset(0f, 0f)
+            //state.tiltAccel = Offset(0f, 0f)
 
-            updatePhysics(state, dt.coerceIn(0f, 0.033f))
+            // Map tilt (-1..1) to game acceleration; tweak factor to taste
+            val accelFactor = 900f   // pixels per second^2 per 1.0 tilt
+
+            val newState = state.copy(
+                tiltAccel = Offset(-tiltX * accelFactor, tiltY * accelFactor)
+            )
+
+            // Note: you can flip signs depending on feel
+            state.tiltAccel = Offset(
+                x = -tiltX * accelFactor,  // tilt right → ball moves right (adjust if opposite)
+                y = tiltY * accelFactor    // tilt forward → ball moves down
+            )
+
+            updatePhysics(newState, dt.coerceIn(0f, 0.033f))
+
+            state = newState
+
             // small delay to avoid maxing CPU; you can tune
             kotlinx.coroutines.delay(16)
         }
