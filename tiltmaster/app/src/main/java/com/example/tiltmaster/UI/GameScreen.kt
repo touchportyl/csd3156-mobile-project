@@ -2,6 +2,8 @@ package com.example.tiltmaster.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -106,6 +108,7 @@ private fun updatePhysics(state: GameState, dt: Float) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GameScreen(
     levelId: Int,
@@ -173,22 +176,24 @@ fun GameScreen(
         }
 
         // Overlay UI
-        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+        TopAppBar(
+            title = { Text("Level ${state.levelId}") },
+            navigationIcon = { IconButton(onClick = onExit) {
+                Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+            } },
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 84.dp) // pushes below TopAppBar
+                .padding(12.dp)
+        ) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Level ${state.levelId}", style = MaterialTheme.typography.titleMedium)
                 Text("Time: ${"%.2f".format(state.elapsedSec)}s", style = MaterialTheme.typography.titleMedium)
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                OutlinedButton(onClick = onExit) { Text("Exit") }
-
-                if (state.finished) {
-                    Text("Finished!", style = MaterialTheme.typography.titleMedium)
-                } else if (state.failed) {
-                    Text("Hit trap!", style = MaterialTheme.typography.titleMedium)
-                }
+                if (state.finished) Text("Finished!", style = MaterialTheme.typography.titleMedium)
+                else if (state.failed) Text("Hit trap!", style = MaterialTheme.typography.titleMedium)
             }
         }
     }
