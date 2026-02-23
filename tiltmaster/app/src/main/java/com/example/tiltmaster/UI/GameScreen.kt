@@ -23,6 +23,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.tiltmaster.ViewModel.GameViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.max
@@ -417,14 +419,15 @@ private fun levelBounds(walls: List<Wall>, traps: List<Trap>, goal: Goal, ball: 
 @Composable
 fun GameScreen(
     levelId: Int,
-    onExit: () -> Unit
+    onExit: () -> Unit,
+    vm: GameViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
 
     // Physics still uses this as your "world bounds"
     val DESIGN_W = 1000f
-    val DESIGN_H = 1000f
+    val DESIGN_H = 1400f
 
     var screenSize by remember { mutableStateOf(Size.Zero) }
 
@@ -512,6 +515,13 @@ fun GameScreen(
 
             state = newState
             delay(16)
+        }
+    }
+
+    LaunchedEffect(state.finished) {
+        if (state.finished) {
+            val timeMs = (state.elapsedSec * 1000).toLong()
+            vm.submitBestTime(levelId, timeMs)
         }
     }
 
