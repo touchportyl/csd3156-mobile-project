@@ -3,9 +3,15 @@ package com.example.tiltmaster.nav
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
-import androidx.navigation.compose.*
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.tiltmaster.ui.*
+import com.example.tiltmaster.ui.GameScreen
+import com.example.tiltmaster.ui.LevelSelectScreen
+import com.example.tiltmaster.ui.MenuScreen
+import com.example.tiltmaster.ui.SettingsScreen
+import com.example.tiltmaster.ui.SettingsViewModel
 
 sealed class Screen(val route: String) {
     data object Menu : Screen("menu")
