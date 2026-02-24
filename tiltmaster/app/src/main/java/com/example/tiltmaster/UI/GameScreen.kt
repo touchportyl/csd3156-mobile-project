@@ -62,166 +62,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.max
 import kotlin.math.min
-
-// --- Simple data models (you can move these to game/ later) ---
-data class Wall(val rect: Rect)
-data class Trap(val rect: Rect)
-data class Goal(val rect: Rect)
-
-data class Ball(
-    var pos: Offset,
-    var vel: Offset,
-    val radius: Float
-)
-
-data class GameState(
-    val levelId: Int,
-    var elapsedSec: Float = 0f,
-    var finished: Boolean = false,
-    var failed: Boolean = false,
-    val ball: Ball,
-    val walls: List<Wall>,
-    val traps: List<Trap>,
-    val goal: Goal,
-    var tiltAccel: Offset = Offset.Zero // set by sensors later
-)
+import com.example.tiltmaster.phys.*
 
 // --- Core loop helpers ---
 private fun clamp(v: Float, lo: Float, hi: Float) = max(lo, min(hi, v))
 
-private fun circleIntersectsRect(center: Offset, radius: Float, r: Rect): Boolean {
-    val closestX = clamp(center.x, r.left, r.right)
-    val closestY = clamp(center.y, r.top, r.bottom)
-    val dx = center.x - closestX
-    val dy = center.y - closestY
-    return dx * dx + dy * dy <= radius * radius
-}
-
-private fun updatePhysics(
-    state: GameState,
-    dt: Float,
-    boundsWidth: Float,
-    boundsHeight: Float
-) {
-    if (state.finished || state.failed) return
-
-    state.elapsedSec += dt
-
-    val accel = state.tiltAccel
-
-    // Harder levels: more accel, less damping, higher max speed
-    val levelFactor = (state.levelId - 1).coerceIn(0, 4) // 0..4
-    val damping = (0.985f - levelFactor * 0.002f).coerceIn(0.972f, 0.985f)
-    val maxSpeed = (1100f + levelFactor * 120f)
-
-    state.ball.vel = Offset(
-        state.ball.vel.x + accel.x * dt,
-        state.ball.vel.y + accel.y * dt
-    )
-
-    val vx = clamp(state.ball.vel.x, -maxSpeed, maxSpeed)
-    val vy = clamp(state.ball.vel.y, -maxSpeed, maxSpeed)
-    state.ball.vel = Offset(vx, vy)
-
-    var nextPos = state.ball.pos + state.ball.vel * dt
-    val radius = state.ball.radius
-
-    // ----------------------------
-    // WALL COLLISION (unchanged)
-    // ----------------------------
-    for (w in state.walls) {
-        val closestX = clamp(nextPos.x, w.rect.left, w.rect.right)
-        val closestY = clamp(nextPos.y, w.rect.top, w.rect.bottom)
-
-        val dx = nextPos.x - closestX
-        val dy = nextPos.y - closestY
-        val distSq = dx * dx + dy * dy
-
-        if (distSq < radius * radius) {
-            val dist = kotlin.math.sqrt(distSq)
-            val nx = if (dist != 0f) dx / dist else 0f
-            val ny = if (dist != 0f) dy / dist else 0f
-
-            val penetration = radius - dist
-            nextPos += Offset(nx * penetration, ny * penetration)
-
-            val dot = state.ball.vel.x * nx + state.ball.vel.y * ny
-            if (dot < 0f) {
-                val restitution = 0.6f
-                state.ball.vel = Offset(
-                    state.ball.vel.x - (1f + restitution) * dot * nx,
-                    state.ball.vel.y - (1f + restitution) * dot * ny
-                )
-            }
-        }
-    }
-
-    // ----------------------------
-    // ROUNDED SCREEN BOUNDARIES
-    // (these are in "boundsWidth/Height" co-ords)
-    // ----------------------------
-    val cornerRadius = 60f
-    val restitution = 0.6f
-
-    fun resolveCollision(nx: Float, ny: Float, penetration: Float) {
-        nextPos += Offset(nx * penetration, ny * penetration)
-
-        val dot = state.ball.vel.x * nx + state.ball.vel.y * ny
-        if (dot < 0f) {
-            state.ball.vel = Offset(
-                state.ball.vel.x - (1f + restitution) * dot * nx,
-                state.ball.vel.y - (1f + restitution) * dot * ny
-            )
-        }
-    }
-
-    // Flat edges
-    if (nextPos.x - radius < 0f) resolveCollision(1f, 0f, radius - nextPos.x)
-    if (nextPos.x + radius > boundsWidth) resolveCollision(-1f, 0f, nextPos.x + radius - boundsWidth)
-    if (nextPos.y - radius < 0f) resolveCollision(0f, 1f, radius - nextPos.y)
-    if (nextPos.y + radius > boundsHeight) resolveCollision(0f, -1f, nextPos.y + radius - boundsHeight)
-
-    // Rounded corners
-    val corners = listOf(
-        Offset(cornerRadius, cornerRadius),
-        Offset(boundsWidth - cornerRadius, cornerRadius),
-        Offset(cornerRadius, boundsHeight - cornerRadius),
-        Offset(boundsWidth - cornerRadius, boundsHeight - cornerRadius)
-    )
-
-    for (corner in corners) {
-        val dx = nextPos.x - corner.x
-        val dy = nextPos.y - corner.y
-        val distSq = dx * dx + dy * dy
-        val maxDist = cornerRadius - radius
-
-        if (distSq < maxDist * maxDist) {
-            val dist = kotlin.math.sqrt(distSq)
-            if (dist != 0f) {
-                val nx = dx / dist
-                val ny = dy / dist
-                val penetration = maxDist - dist
-                resolveCollision(nx, ny, penetration)
-            }
-        }
-    }
-
-    state.ball.pos = nextPos
-    state.ball.vel *= damping
-
-    // traps
-    for (t in state.traps) {
-        if (circleIntersectsRect(state.ball.pos, radius, t.rect)) {
-            state.failed = true
-            return
-        }
-    }
-
-    // goal
-    if (circleIntersectsRect(state.ball.pos, radius, state.goal.rect)) {
-        state.finished = true
-    }
-}
 /**
  * 5 levels
  */
@@ -659,10 +504,10 @@ fun GameScreen(
     vm: GameViewModel = viewModel(),
     settingsVM: SettingsViewModel
 ) {
+
     val context = LocalContext.current
     val density = LocalDensity.current
 
-    // Physics still uses this as your "world bounds"
     val DESIGN_W = 1000f
     val DESIGN_H = 1400f
 
@@ -672,7 +517,9 @@ fun GameScreen(
     var tiltY by remember { mutableFloatStateOf(0f) }
     var sensorAvailable by remember { mutableStateOf(false) }
 
-    val (lvlWalls, lvlTraps, lvlGoal) = remember(levelId) { buildLevel(levelId) }
+    val (lvlWalls, lvlTraps, lvlGoal) = remember(levelId) {
+        buildLevel(levelId)
+    }
 
     var state by remember(levelId) {
         mutableStateOf(makeInitialState(levelId, lvlWalls, lvlTraps, lvlGoal))
@@ -682,13 +529,17 @@ fun GameScreen(
         state = makeInitialState(levelId, lvlWalls, lvlTraps, lvlGoal)
     }
 
+    // ---------------- SENSOR ----------------
+
     DisposableEffect(Unit) {
-        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val sensorManager =
+            context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val accelerometer =
+            sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
         if (accelerometer == null) {
             sensorAvailable = false
-            return@DisposableEffect onDispose { }
+            return@DisposableEffect onDispose {}
         }
 
         sensorAvailable = true
@@ -711,15 +562,26 @@ fun GameScreen(
                     tiltY = (filteredY / maxTilt).coerceIn(-1f, 1f)
                 }
             }
+
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
         }
 
-        sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_GAME)
-        onDispose { sensorManager.unregisterListener(listener) }
+        sensorManager.registerListener(
+            listener,
+            accelerometer,
+            SensorManager.SENSOR_DELAY_GAME
+        )
+
+        onDispose {
+            sensorManager.unregisterListener(listener)
+        }
     }
+
+    // ---------------- GAME LOOP ----------------
 
     LaunchedEffect(levelId) {
         var last = System.nanoTime()
+
         while (isActive) {
             val now = System.nanoTime()
             val dt = (now - last) / 1_000_000_000f
@@ -767,6 +629,7 @@ fun GameScreen(
         }
     }
 
+
     // --- Top UI height in PX (to avoid drawing under the app bar/status bar) ---
     val appBarHeightDp = 56.dp
     val statusBarTopDp = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -774,6 +637,7 @@ fun GameScreen(
     val topUiPx = with(density) { topUiDp.toPx() }
 
     // --- NEW: center based on actual content bounds (maze may start at x=100, etc.) ---
+
     val contentRect = remember(levelId) {
         levelBounds(lvlWalls, lvlTraps, lvlGoal, state.ball)
     }
@@ -790,11 +654,9 @@ fun GameScreen(
             val availH = (screenSize.height - topUiPx).coerceAtLeast(1f)
             val drawW = contentRect.width * scale
             val drawH = contentRect.height * scale
-
             val ox = (screenSize.width - drawW) / 2f
-            val oy = topUiPx + (availH - drawH) / 2f
-
-            // shift by contentRect.left/top so maze is truly centered
+            val oy =
+                topUiPx + (availH - drawH) / 2f // shift by contentRect.left/top so maze is truly centered
             Offset(
                 x = ox - contentRect.left * scale,
                 y = oy - contentRect.top * scale
@@ -802,12 +664,17 @@ fun GameScreen(
         }
     }
 
+    // ---------------- UI ----------------
+
     Box(Modifier.fillMaxSize()) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
                 .onSizeChanged {
-                    screenSize = Size(it.width.toFloat(), it.height.toFloat())
+                    screenSize = Size(
+                        it.width.toFloat(),
+                        it.height.toFloat()
+                    )
                 }
         ) {
             withTransform({
@@ -854,7 +721,6 @@ fun GameScreen(
             },
             modifier = Modifier.fillMaxWidth()
         )
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -866,8 +732,13 @@ fun GameScreen(
                     "Time: ${"%.2f".format(state.elapsedSec)}s",
                     style = MaterialTheme.typography.titleMedium
                 )
-                if (state.finished) Text("Finished!", style = MaterialTheme.typography.titleMedium)
-                else if (state.failed) Text("Hit trap!", style = MaterialTheme.typography.titleMedium)
+                if (state.finished) Text(
+                    "Finished!",
+                    style = MaterialTheme.typography.titleMedium
+                ) else if (state.failed) Text(
+                    "Hit trap!",
+                    style = MaterialTheme.typography.titleMedium
+                )
             }
         }
         if (state.finished || state.failed) {
