@@ -32,6 +32,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
 import com.example.tiltmaster.ViewModel.GameViewModel
+import com.example.tiltmaster.ui.SettingsViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.max
@@ -396,7 +397,7 @@ private fun buildLevel(levelId: Int): Triple<List<Wall>, List<Trap>, Goal> {
             Triple(walls, traps, goal)
         }
         // ===============================================================
-        // LEVEL 5 
+        // LEVEL 5
         // ===============================================================
         else -> {
             val walls = border + listOf(
@@ -550,14 +551,12 @@ private fun vibrateTrapHit(context: Context) {
             context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
         val vibrator = vm.defaultVibrator
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(
-                VibrationEffect.createOneShot(
-                    80L,
-                    VibrationEffect.DEFAULT_AMPLITUDE
-                )
+        vibrator.vibrate(
+            VibrationEffect.createOneShot(
+                80L,
+                VibrationEffect.DEFAULT_AMPLITUDE
             )
-        }
+        )
     } else {
         @Suppress("DEPRECATION")
         val vibrator =
@@ -591,7 +590,11 @@ fun rememberMediaPlayer(resId: Int): MediaPlayer {
 
     DisposableEffect(resId) {
         onDispose {
-            player.stop()
+            try {
+                player.stop()
+            } catch (e: IllegalStateException) {
+                // Player was not in a valid state to be stopped; ignore and proceed to release
+            }
             player.release()
         }
     }
@@ -609,7 +612,7 @@ private fun makeInitialState(
         ball = Ball(
             pos = Offset(200f, 200f),
             vel = Offset.Zero,
-            radius = (22f - (levelId - 1).coerceIn(0, 4) * 1.5f)
+            radius = (22f - (levelId - 1).coerceIn(0, 4) * 1.5f).coerceAtLeast(10f)
         ),
         walls = walls,
         traps = traps,
@@ -724,8 +727,10 @@ fun GameScreen(
 
     LaunchedEffect(state.finished, settings.soundEnabled) {
         if (state.finished && settings.soundEnabled) {
-            winPlayer.seekTo(0)
-            winPlayer.start()
+            if (!winPlayer.isPlaying) {
+                winPlayer.seekTo(0)
+                winPlayer.start()
+            }
             val timeMs = (state.elapsedSec * 1000).toLong()
             vm.submitBestTime(levelId, timeMs)
         }
