@@ -48,7 +48,8 @@ fun LevelSelectScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(levels) { lvl -> val best = bestMap[lvl]
+            items(levels) { lvl ->
+                val best = bestMap[lvl]
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -59,7 +60,7 @@ fun LevelSelectScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("Level $lvl")
-                        Text("Best: ${formatTime(best)}") // later: from Room
+                        Text("Best: ${formatTime(best)}")
                     }
                 }
             }
