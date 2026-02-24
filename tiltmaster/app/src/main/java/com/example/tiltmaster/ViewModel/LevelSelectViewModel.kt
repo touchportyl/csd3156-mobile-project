@@ -1,4 +1,4 @@
-package com.example.tiltmaster.ViewModel
+package com.example.tiltmaster.ui
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
