@@ -38,6 +38,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.max
 import kotlin.math.min
+import com.example.tiltmaster.phys.*
 
 // --- Simple data models (you can move these to game/ later) ---
 data class Wall(val rect: Rect)
@@ -633,10 +634,10 @@ fun GameScreen(
     vm: GameViewModel = viewModel(),
     settingsVM: SettingsViewModel
 ) {
+
     val context = LocalContext.current
     val density = LocalDensity.current
 
-    // Physics still uses this as your "world bounds"
     val DESIGN_W = 1000f
     val DESIGN_H = 1400f
 
@@ -646,7 +647,9 @@ fun GameScreen(
     var tiltY by remember { mutableStateOf(0f) }
     var sensorAvailable by remember { mutableStateOf(true) }
 
-    val (lvlWalls, lvlTraps, lvlGoal) = remember(levelId) { buildLevel(levelId) }
+    val (lvlWalls, lvlTraps, lvlGoal) = remember(levelId) {
+        buildLevel(levelId)
+    }
 
     var state by remember(levelId) {
         mutableStateOf(makeInitialState(levelId, lvlWalls, lvlTraps, lvlGoal))
@@ -656,13 +659,17 @@ fun GameScreen(
         state = makeInitialState(levelId, lvlWalls, lvlTraps, lvlGoal)
     }
 
+    // ---------------- SENSOR ----------------
+
     DisposableEffect(Unit) {
-        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val sensorManager =
+            context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val accelerometer =
+            sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
         if (accelerometer == null) {
             sensorAvailable = false
-            return@DisposableEffect onDispose { }
+            return@DisposableEffect onDispose {}
         }
 
         sensorAvailable = true
@@ -685,15 +692,26 @@ fun GameScreen(
                     tiltY = (filteredY / maxTilt).coerceIn(-1f, 1f)
                 }
             }
+
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
         }
 
-        sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_GAME)
-        onDispose { sensorManager.unregisterListener(listener) }
+        sensorManager.registerListener(
+            listener,
+            accelerometer,
+            SensorManager.SENSOR_DELAY_GAME
+        )
+
+        onDispose {
+            sensorManager.unregisterListener(listener)
+        }
     }
+
+    // ---------------- GAME LOOP ----------------
 
     LaunchedEffect(levelId) {
         var last = System.nanoTime()
+
         while (isActive) {
             val now = System.nanoTime()
             val dt = (now - last) / 1_000_000_000f
@@ -728,6 +746,7 @@ fun GameScreen(
         if (state.finished && settings.soundEnabled) {
             winPlayer.seekTo(0)
             winPlayer.start()
+
             val timeMs = (state.elapsedSec * 1000).toLong()
             vm.submitBestTime(levelId, timeMs)
         }
@@ -739,6 +758,7 @@ fun GameScreen(
         }
     }
 
+
     // --- Top UI height in PX (to avoid drawing under the app bar/status bar) ---
     val appBarHeightDp = 56.dp
     val statusBarTopDp = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -746,6 +766,7 @@ fun GameScreen(
     val topUiPx = with(density) { topUiDp.toPx() }
 
     // --- NEW: center based on actual content bounds (maze may start at x=100, etc.) ---
+
     val contentRect = remember(levelId) {
         levelBounds(lvlWalls, lvlTraps, lvlGoal, state.ball)
     }
@@ -762,11 +783,9 @@ fun GameScreen(
             val availH = (screenSize.height - topUiPx).coerceAtLeast(1f)
             val drawW = contentRect.width * scale
             val drawH = contentRect.height * scale
-
             val ox = (screenSize.width - drawW) / 2f
-            val oy = topUiPx + (availH - drawH) / 2f
-
-            // shift by contentRect.left/top so maze is truly centered
+            val oy =
+                topUiPx + (availH - drawH) / 2f // shift by contentRect.left/top so maze is truly centered
             Offset(
                 x = ox - contentRect.left * scale,
                 y = oy - contentRect.top * scale
@@ -774,12 +793,17 @@ fun GameScreen(
         }
     }
 
+    // ---------------- UI ----------------
+
     Box(Modifier.fillMaxSize()) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
                 .onSizeChanged {
-                    screenSize = Size(it.width.toFloat(), it.height.toFloat())
+                    screenSize = Size(
+                        it.width.toFloat(),
+                        it.height.toFloat()
+                    )
                 }
         ) {
             withTransform({
@@ -821,12 +845,14 @@ fun GameScreen(
             title = { Text("Level ${state.levelId}") },
             navigationIcon = {
                 IconButton(onClick = onExit) {
-                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                    Icon(
+                        Icons.Filled.ArrowBack,
+                        contentDescription = "Back"
+                    )
                 }
             },
             modifier = Modifier.fillMaxWidth()
         )
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -838,8 +864,13 @@ fun GameScreen(
                     "Time: ${"%.2f".format(state.elapsedSec)}s",
                     style = MaterialTheme.typography.titleMedium
                 )
-                if (state.finished) Text("Finished!", style = MaterialTheme.typography.titleMedium)
-                else if (state.failed) Text("Hit trap!", style = MaterialTheme.typography.titleMedium)
+                if (state.finished) Text(
+                    "Finished!",
+                    style = MaterialTheme.typography.titleMedium
+                ) else if (state.failed) Text(
+                    "Hit trap!",
+                    style = MaterialTheme.typography.titleMedium
+                )
             }
         }
         if (state.finished || state.failed) {

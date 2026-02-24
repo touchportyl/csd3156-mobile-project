@@ -1,4 +1,4 @@
-package com.example.tiltmaster.nav
+package com.example.tiltmaster
 
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.viewmodel.compose.viewModel
