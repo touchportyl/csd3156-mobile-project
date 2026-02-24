@@ -50,7 +50,6 @@ private fun circleIntersectsRect(center: Offset, radius: Float, r: Rect): Boolea
 // --------------------------------------------------
 // Physics Update
 // --------------------------------------------------
-
 fun updatePhysics(
     state: GameState,
     dt: Float,
