@@ -46,7 +46,18 @@ fun AppNav() {
             val levelId = backStackEntry.arguments?.getInt("levelId") ?: 1
             GameScreen(
                 levelId = levelId,
-                onExit = { navController.popBackStack() }
+                onExit = { navController.popBackStack() },
+                onGoLevelSelect = {
+                    navController.navigate(Screen.LevelSelect.route) {
+                        popUpTo(Screen.Menu.route) { inclusive = false }
+                    }
+                },
+                onGoMainMenu = {
+                    navController.navigate(Screen.Menu.route) {
+                        popUpTo(Screen.Menu.route) { inclusive = true }
+                    }
+                },
+                onGoSettings = { navController.navigate(Screen.Settings.route) }
             )
         }
 

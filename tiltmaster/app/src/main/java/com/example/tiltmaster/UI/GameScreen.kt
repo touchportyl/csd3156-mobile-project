@@ -7,6 +7,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -24,6 +25,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import com.example.tiltmaster.ViewModel.GameViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -470,11 +475,103 @@ private fun levelBounds(walls: List<Wall>, traps: List<Trap>, goal: Goal, ball: 
     return Rect(left - pad, top - pad, right + pad, bottom + pad)
 }
 
+@Composable
+private fun EndOverlay(
+    isWin: Boolean,
+    timeSec: Float,
+    onRestart: () -> Unit,
+    onLevelSelect: () -> Unit,
+    onMainMenu: () -> Unit,
+    onSettings: () -> Unit
+) {
+    val title = if (isWin) "You Win!" else "You Lost!"
+    val subtitle = if (isWin) "Time: ${"%.2f".format(timeSec)}s" else "Hit trap!"
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.65f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Card {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(title, style = MaterialTheme.typography.headlineSmall)
+                Spacer(Modifier.height(6.dp))
+                Text(subtitle, style = MaterialTheme.typography.titleMedium)
+
+                Spacer(Modifier.height(16.dp))
+
+                val btnShape = RoundedCornerShape(28.dp)
+                val btnHeight = 48.dp
+                val stroke = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+
+                Button(
+                    onClick = onRestart,
+                    shape = btnShape,
+                    modifier = Modifier.fillMaxWidth().height(btnHeight)
+                ) { Text("Restart") }
+                Spacer(Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = onLevelSelect,
+                    shape = btnShape,
+                    border = stroke,
+                    modifier = Modifier.fillMaxWidth().height(btnHeight)
+                ) { Text("Level Select") }
+                Spacer(Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = onMainMenu,
+                    shape = btnShape,
+                    border = stroke,
+                    modifier = Modifier.fillMaxWidth().height(btnHeight)
+                ) { Text("Main Menu") }
+                Spacer(Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = onSettings,
+                    shape = btnShape,
+                    border = stroke,
+                    modifier = Modifier.fillMaxWidth().height(btnHeight)
+                ) { Text("Settings") }
+            }
+        }
+    }
+}
+
+private fun makeInitialState(
+    levelId: Int,
+    walls: List<Wall>,
+    traps: List<Trap>,
+    goal: Goal
+): GameState {
+    return GameState(
+        levelId = levelId,
+        ball = Ball(
+            pos = Offset(200f, 200f),
+            vel = Offset.Zero,
+            radius = (22f - (levelId - 1).coerceIn(0, 4) * 1.5f)
+        ),
+        walls = walls,
+        traps = traps,
+        goal = goal,
+        elapsedSec = 0f,
+        finished = false,
+        failed = false,
+        tiltAccel = Offset.Zero
+    )
+}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GameScreen(
     levelId: Int,
     onExit: () -> Unit,
+    onGoLevelSelect: () -> Unit,
+    onGoMainMenu: () -> Unit,
+    onGoSettings: () -> Unit,
     vm: GameViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -493,19 +590,11 @@ fun GameScreen(
     val (lvlWalls, lvlTraps, lvlGoal) = remember(levelId) { buildLevel(levelId) }
 
     var state by remember(levelId) {
-        mutableStateOf(
-            GameState(
-                levelId = levelId,
-                ball = Ball(
-                    pos = Offset(200f, 200f),
-                    vel = Offset.Zero,
-                    radius = (22f - (levelId - 1).coerceIn(0, 4) * 1.5f)
-                ),
-                walls = lvlWalls,
-                traps = lvlTraps,
-                goal = lvlGoal
-            )
-        )
+        mutableStateOf(makeInitialState(levelId, lvlWalls, lvlTraps, lvlGoal))
+    }
+
+    val restartLevel = {
+        state = makeInitialState(levelId, lvlWalls, lvlTraps, lvlGoal)
     }
 
     DisposableEffect(Unit) {
@@ -682,6 +771,16 @@ fun GameScreen(
                 if (state.finished) Text("Finished!", style = MaterialTheme.typography.titleMedium)
                 else if (state.failed) Text("Hit trap!", style = MaterialTheme.typography.titleMedium)
             }
+        }
+        if (state.finished || state.failed) {
+            EndOverlay(
+                isWin = state.finished,
+                timeSec = state.elapsedSec,
+                onRestart = restartLevel,
+                onLevelSelect = onGoLevelSelect,
+                onMainMenu = onGoMainMenu,
+                onSettings = onGoSettings
+            )
         }
     }
 }
