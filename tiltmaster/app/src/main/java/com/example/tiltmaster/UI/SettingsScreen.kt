@@ -11,7 +11,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = viewModel()) {
+fun SettingsScreen(onBack: () -> Unit, vm: SettingsViewModel) {
     val s = vm.settings.collectAsState().value
 
     var sensitivity by remember(s.sensitivity) { mutableFloatStateOf(s.sensitivity) }

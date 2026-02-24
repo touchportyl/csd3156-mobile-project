@@ -7,6 +7,10 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
@@ -28,7 +32,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.Color
 import com.example.tiltmaster.ViewModel.GameViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -541,7 +544,41 @@ private fun EndOverlay(
         }
     }
 }
+private fun vibrateTrapHit(context: Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        // API 31+
+        val vm =
+            context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+        val vibrator = vm.defaultVibrator
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(
+                VibrationEffect.createOneShot(
+                    80L,
+                    VibrationEffect.DEFAULT_AMPLITUDE
+                )
+            )
+        }
+    } else {
+        @Suppress("DEPRECATION")
+        val vibrator =
+            context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            // API 26–30
+            vibrator.vibrate(
+                VibrationEffect.createOneShot(
+                    80L,
+                    VibrationEffect.DEFAULT_AMPLITUDE
+                )
+            )
+        } else {
+            // API 24–25 (NO VibrationEffect)
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(80L)
+        }
+    }
+}
 private fun makeInitialState(
     levelId: Int,
     walls: List<Wall>,
@@ -572,7 +609,8 @@ fun GameScreen(
     onGoLevelSelect: () -> Unit,
     onGoMainMenu: () -> Unit,
     onGoSettings: () -> Unit,
-    vm: GameViewModel = viewModel()
+    vm: GameViewModel = viewModel(),
+    settingsVM: SettingsViewModel
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
@@ -666,6 +704,14 @@ fun GameScreen(
         if (state.finished) {
             val timeMs = (state.elapsedSec * 1000).toLong()
             vm.submitBestTime(levelId, timeMs)
+        }
+    }
+
+    val settings by settingsVM.settings.collectAsState()
+
+    LaunchedEffect(state.failed, settings.vibrationEnabled) {
+        if (state.failed && settings.vibrationEnabled) {
+            vibrateTrapHit(context)
         }
     }
 

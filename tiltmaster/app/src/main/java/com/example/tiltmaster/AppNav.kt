@@ -1,6 +1,7 @@
 package com.example.tiltmaster.nav
 
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
@@ -18,6 +19,7 @@ sealed class Screen(val route: String) {
 @Composable
 fun AppNav() {
     val navController = rememberNavController()
+    val settingsVM: SettingsViewModel = viewModel()
 
     NavHost(
         navController = navController,
@@ -57,13 +59,15 @@ fun AppNav() {
                         popUpTo(Screen.Menu.route) { inclusive = true }
                     }
                 },
-                onGoSettings = { navController.navigate(Screen.Settings.route) }
+                onGoSettings = { navController.navigate(Screen.Settings.route) },
+                settingsVM = settingsVM
             )
         }
 
         composable(Screen.Settings.route) {
             SettingsScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                vm = settingsVM
             )
         }
     }
