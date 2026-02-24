@@ -12,7 +12,7 @@ object DatabaseProvider {
                 context.applicationContext,
                 AppDatabase::class.java,
                 "tiltmaster_db"
-            ).build().also { INSTANCE = it }
+            ).fallbackToDestructiveMigration().build().also { INSTANCE = it }
         }
     }
 }

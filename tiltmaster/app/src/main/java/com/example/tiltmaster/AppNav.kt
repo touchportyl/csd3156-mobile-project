@@ -1,10 +1,17 @@
 package com.example.tiltmaster.nav
 
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
-import androidx.navigation.compose.*
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.tiltmaster.ui.*
+import com.example.tiltmaster.ui.GameScreen
+import com.example.tiltmaster.ui.LevelSelectScreen
+import com.example.tiltmaster.ui.MenuScreen
+import com.example.tiltmaster.ui.SettingsScreen
+import com.example.tiltmaster.ui.SettingsViewModel
 
 sealed class Screen(val route: String) {
     data object Menu : Screen("menu")
@@ -18,6 +25,7 @@ sealed class Screen(val route: String) {
 @Composable
 fun AppNav() {
     val navController = rememberNavController()
+    val settingsVM: SettingsViewModel = viewModel()
 
     NavHost(
         navController = navController,
@@ -46,13 +54,26 @@ fun AppNav() {
             val levelId = backStackEntry.arguments?.getInt("levelId") ?: 1
             GameScreen(
                 levelId = levelId,
-                onExit = { navController.popBackStack() }
+                onExit = { navController.popBackStack() },
+                onGoLevelSelect = {
+                    navController.navigate(Screen.LevelSelect.route) {
+                        popUpTo(Screen.Menu.route) { inclusive = false }
+                    }
+                },
+                onGoMainMenu = {
+                    navController.navigate(Screen.Menu.route) {
+                        popUpTo(Screen.Menu.route) { inclusive = true }
+                    }
+                },
+                onGoSettings = { navController.navigate(Screen.Settings.route) },
+                settingsVM = settingsVM
             )
         }
 
         composable(Screen.Settings.route) {
             SettingsScreen(
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                vm = settingsVM
             )
         }
     }
