@@ -190,20 +190,7 @@ private fun updatePhysics(
     }
 }
 /**
- * 5 levels (harder = more obstacles + tighter paths).
- * Design space: ~0..1000.
- *
- * Convention used here:
- * - Outer border is always a closed box (thick walls).
- * - Interior walls are arranged so there is always at least ONE valid path
- *   from start (ball spawn near top-left) to goal (near bottom-right).
- */
-/**
- * 5 vertical levels (harder = narrower paths + more traps).
- * Design space: W=1000, H=1400.
- *
- * Border thickness ~40.
- * Doorways/gaps are kept >= ~140px so the ball can pass reliably.
+ * 5 levels
  */
 private fun buildLevel(levelId: Int): Triple<List<Wall>, List<Trap>, Goal> {
 
@@ -218,14 +205,13 @@ private fun buildLevel(levelId: Int): Triple<List<Wall>, List<Trap>, Goal> {
     return when (levelId.coerceIn(1, 5)) {
 
         // ===============================================================
-        // LEVEL 1 — "Warm Up" (very easy)
-        // One big divider. You just go down then right.
+        // LEVEL 1
         // ===============================================================
         1 -> {
             val walls = border + listOf(
                 // A horizontal divider with a wide gap on the right
                 Wall(Rect(140f, 420f, 700f, 460f)),
-                // A small pillar to teach control (not blocking)
+                // A small pillar to teach control
                 Wall(Rect(420f, 720f, 470f, 860f)),
             )
 
@@ -238,8 +224,7 @@ private fun buildLevel(levelId: Int): Triple<List<Wall>, List<Trap>, Goal> {
         }
 
         // ===============================================================
-        // LEVEL 2 — "Three Gates" (easy-medium)
-        // Vertical progress: pass 3 gate lines with alternating openings.
+        // LEVEL 2
         // ===============================================================
         2 -> {
             val walls = border + listOf(
@@ -268,73 +253,143 @@ private fun buildLevel(levelId: Int): Triple<List<Wall>, List<Trap>, Goal> {
         }
 
         // ===============================================================
-        // LEVEL 3 — "Switchbacks" (medium)
-        // Proper vertical snake corridor (alternating left/right).
+        // LEVEL 3
         // ===============================================================
         3 -> {
-            val walls = border + listOf(
-                // Long bars creating switchbacks (wide gaps)
-                Wall(Rect(140f, 260f, 760f, 300f)),  // gap right (760..860)
-                Wall(Rect(240f, 420f, 860f, 460f)),  // gap left (140..240)
-                Wall(Rect(140f, 580f, 760f, 620f)),  // gap right
-                Wall(Rect(240f, 740f, 860f, 780f)),  // gap left
-                Wall(Rect(140f, 900f, 760f, 940f)),  // gap right
-                Wall(Rect(240f, 1060f, 860f, 1100f)),// gap left
 
-                // A couple of “posts” to make turns harder but passable
-                Wall(Rect(740f, 300f, 780f, 380f)),
-                Wall(Rect(220f, 460f, 260f, 540f)),
-                Wall(Rect(740f, 620f, 780f, 700f)),
+            val walls = border + listOf(
+                // -------------------------
+                // Room separators (horizontal)
+
+                Wall(Rect(140f, 420f, 720f, 460f)),
+
+
+                Wall(Rect(280f, 780f, 860f, 820f)),
+
+                // -------------------------
+                // Vertical divider in the middle
+                Wall(Rect(520f, 460f, 560f, 600f)),
+                Wall(Rect(520f, 680f, 560f, 780f)),
+
+                // -------------------------
+                // Bottom-right goal pocket walls (NOT sealed)
+                // Make a pocket where the only entrance is from the LEFT.
+                // Pocket top wall (leave a clear entrance from left side)
+                Wall(Rect(620f, 1040f, 860f, 1080f)),
+
+                // Pocket left wall (creates the pocket shape)
+                //Wall(Rect(620f, 1080f, 660f, 1260f)),
+
+                // A short bottom inner wall to stop straight drop into goal (but still passable)
+                Wall(Rect(420f, 1120f, 620f, 1160f)),
+
+                // -------------------------
+                // Small blockers (make it maze-like but fair)
+                // Top room small post (forces slight steering, not blocking)
+                Wall(Rect(420f, 240f, 460f, 340f)),
+
+                // Mid room small post near the right side
+                Wall(Rect(760f, 540f, 800f, 660f)),
+
+                // Lower room small post near left
+                Wall(Rect(240f, 880f, 280f, 1000f))
             )
 
             val traps = listOf(
-                Trap(Rect(780f, 340f, 840f, 400f)),
-                Trap(Rect(160f, 500f, 220f, 560f)),
-                Trap(Rect(780f, 820f, 840f, 880f)),
-                Trap(Rect(160f, 980f, 220f, 1040f)),
+                // Traps placed in "optional space", not on the required doorway line.
+                Trap(Rect(200f, 520f, 260f, 580f)),   // mid-left (avoidable)
+                Trap(Rect(700f, 620f, 760f, 680f)),   // mid-right (avoidable)
+                Trap(Rect(360f, 940f, 420f, 1000f))   // lower-middle (avoidable)
             )
 
-            val goal = Goal(Rect(760f, 1160f, 840f, 1240f))
+            // Goal placed inside the pocket (reachable from left entrance)
+            val goal = Goal(Rect(740f, 1160f, 840f, 1240f))
+
             Triple(walls, traps, goal)
         }
 
         // ===============================================================
-        // LEVEL 4 — "Rooms + Doors" (hard)
-        // 4 stacked rooms; each separator has one big doorway.
+        // LEVEL 4
         // ===============================================================
         4 -> {
+            // Goal inside the blocked top-right quadrant
+            val goal = Goal(Rect(785f, 175f, 845f, 235f))
+
             val walls = border + listOf(
-                // Separator 1 (doorway on RIGHT)
-                Wall(Rect(140f, 360f, 680f, 400f)),
+                // Top lane blockers (stop "one tilt right" from spawn)
+                Wall(Rect(140f, 220f, 520f, 260f)),   // long bar
+                Wall(Rect(600f, 220f, 760f, 260f)),   // leaves a gap between 520..600
 
-                // Separator 2 (doorway on LEFT)
-                Wall(Rect(320f, 620f, 860f, 660f)),
+                // Mid horizontal separator (forces a drop to lower half)
+                Wall(Rect(260f, 420f, 800f, 460f)),   // long bar
 
-                // Separator 3 (doorway on RIGHT)
-                Wall(Rect(140f, 880f, 680f, 920f)),
+                // Left vertical post (prevents free sliding down the left edge)
+                Wall(Rect(150f, 260f, 200f, 420f)),
 
-                // Add a vertical wall in the middle with TWO doorways (forces S-turn)
-                Wall(Rect(500f, 140f, 540f, 280f)),
-                Wall(Rect(500f, 440f, 540f, 560f)),
-                Wall(Rect(500f, 720f, 540f, 840f)),
-                Wall(Rect(500f, 1000f, 540f, 1260f)),
-                // doorways at y=280..440, 560..720, 840..1000
+                // Center post (creates decision + prevents straight route)
+                Wall(Rect(520f, 460f, 560f, 700f)),
+
+                // Lower mid bar (forces you to go around to the RIGHT side)
+                Wall(Rect(140f, 700f, 400f, 740f)),
+
+                Wall(Rect(500f, 700f, 720f, 740f)),
+
+                // Right-side “channel” wall (creates a corridor up towards the quadrant entrance)
+                Wall(Rect(720f, 460f, 760f, 1100f)),
+
+                // A bar that blocks you from going into the right channel too early
+                Wall(Rect(560f, 540f, 720f, 580f)),
+
+                // Bottom-left bar to stop easy bottom sweep
+                Wall(Rect(140f, 1000f, 520f, 1040f)),
+
+                // A post near bottom to force a turn into the right channel
+                Wall(Rect(520f, 900f, 560f, 1000f)),
+
+                // =========================================================
+                // BLOCK TOP-RIGHT QUADRANT (SEALED AREA)
+                // Quadrant region: x 660..900, y 100..420
+                // Only entrance: small hole at bottom-right of quadrant.
+                // =========================================================
+
+                // Left wall of quadrant
+                Wall(Rect(660f, 100f, 700f, 420f)),
+
+                // Top wall of quadrant (cap)
+                Wall(Rect(660f, 100f, 900f, 140f)),
+
+                // Bottom wall of quadrant WITH A HOLE ON THE RIGHT
+                // hole is from x=820..860 (40px). Adjust if your ball radius is bigger.
+                Wall(Rect(660f, 380f, 820f, 420f)),
+
+                // NOTE: right wall is already the border (x=860..900)
+
+                // =========================================================
+                // GOAL POCKET INSIDE QUADRANT (OPEN ON LEFT)
+                // This prevents the goal being "boxed up".
+                // =========================================================
+
+                // Pocket top
+                Wall(Rect(740f, 140f, 900f, 170f)),
+                // Pocket right
+                Wall(Rect(850f, 170f, 900f, 260f)),
+                // Pocket bottom
+                Wall(Rect(740f, 260f, 800f, 290f))
+                // LEFT side open so ball can enter pocket from inside the quadrant
             )
 
             val traps = listOf(
-                Trap(Rect(720f, 260f, 780f, 320f)), // near doorway 1
-                Trap(Rect(200f, 520f, 260f, 580f)), // near doorway 2
-                Trap(Rect(720f, 780f, 780f, 840f)), // near doorway 3
-                Trap(Rect(620f, 1100f, 680f, 1160f)),// near bottom
+                // traps placed where you tend to overshoot turns (but not blocking the only path)
+                Trap(Rect(460f, 300f, 520f, 360f)),   // near top gap
+                Trap(Rect(300f, 560f, 360f, 620f)),   // near mid
+                Trap(Rect(620f, 760f, 680f, 820f)),   // near right-channel entry
+                Trap(Rect(760f, 900f, 820f, 960f))    // inside right channel, punish rushing
             )
 
-            val goal = Goal(Rect(760f, 1160f, 840f, 1240f))
             Triple(walls, traps, goal)
         }
-
         // ===============================================================
-        // LEVEL 5 — "Vertical Gauntlet" (hardest but fair)
-        // Narrower route, multiple turns, no sealed goal pocket.
+        // LEVEL 5 
         // ===============================================================
         else -> {
             val walls = border + listOf(
