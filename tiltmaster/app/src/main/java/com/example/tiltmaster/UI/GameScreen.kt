@@ -7,6 +7,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.media.MediaPlayer
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -579,6 +580,26 @@ private fun vibrateTrapHit(context: Context) {
         }
     }
 }
+
+@Composable
+fun rememberMediaPlayer(resId: Int): MediaPlayer {
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    val player = remember {
+        MediaPlayer.create(context, resId).apply {
+            isLooping = false
+        }
+    }
+
+    DisposableEffect(resId) {
+        onDispose {
+            player.stop()
+            player.release()
+        }
+    }
+
+    return player
+}
 private fun makeInitialState(
     levelId: Int,
     walls: List<Wall>,
@@ -700,14 +721,17 @@ fun GameScreen(
         }
     }
 
-    LaunchedEffect(state.finished) {
-        if (state.finished) {
+    val settings by settingsVM.settings.collectAsState()
+    val winPlayer = rememberMediaPlayer(com.example.tiltmaster.R.raw.win)
+
+    LaunchedEffect(state.finished, settings.soundEnabled) {
+        if (state.finished && settings.soundEnabled) {
+            winPlayer.seekTo(0)
+            winPlayer.start()
             val timeMs = (state.elapsedSec * 1000).toLong()
             vm.submitBestTime(levelId, timeMs)
         }
     }
-
-    val settings by settingsVM.settings.collectAsState()
 
     LaunchedEffect(state.failed, settings.vibrationEnabled) {
         if (state.failed && settings.vibrationEnabled) {
